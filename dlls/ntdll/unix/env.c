@@ -734,12 +734,22 @@ static void init_locale(void)
     const NLS_LOCALE_DATA *locale;
     char *p;
 
-    if (!(all = setlocale( LC_ALL, "" )) && (all = getenv( "LC_ALL" )))
-        FIXME_(nls)( "Failed to set LC_ALL to %s, is the locale supported?\n", debugstr_a(all) );
-    if (!(ctype = setlocale( LC_CTYPE, "" )) && (ctype = getenv( "LC_CTYPE" )))
-        FIXME_(nls)( "Failed to set LC_CTYPE to %s, is the locale supported?\n", debugstr_a(ctype) );
-    if (!(messages = setlocale( LC_MESSAGES, "" )) && (messages = getenv( "LC_MESSAGES" )))
-        FIXME_(nls)( "Failed to set LC_MESSAGES to %s, is the locale supported?\n", debugstr_a(messages) );
+    /* Android/Bionic does not provide the glibc locale archive.  Accept a
+     * launcher-provided Windows locale before setlocale() can fall back to C. */
+    if ((all = getenv( "WINLATOR_LOCALE" )) && all[0])
+    {
+        ctype = messages = all;
+        TRACE_(nls)( "Using Winlator locale override %s\n", debugstr_a(all) );
+    }
+    else
+    {
+        if (!(all = setlocale( LC_ALL, "" )) && (all = getenv( "LC_ALL" )))
+            FIXME_(nls)( "Failed to set LC_ALL to %s, is the locale supported?\n", debugstr_a(all) );
+        if (!(ctype = setlocale( LC_CTYPE, "" )) && (ctype = getenv( "LC_CTYPE" )))
+            FIXME_(nls)( "Failed to set LC_CTYPE to %s, is the locale supported?\n", debugstr_a(ctype) );
+        if (!(messages = setlocale( LC_MESSAGES, "" )) && (messages = getenv( "LC_MESSAGES" )))
+            FIXME_(nls)( "Failed to set LC_MESSAGES to %s, is the locale supported?\n", debugstr_a(messages) );
+    }
 
     if (!unix_to_win_locale( ctype, system_locale )) system_locale[0] = 0;
     TRACE_(nls)( "Unix LC_CTYPE is %s, setting system locale to %s\n", debugstr_a(ctype), debugstr_a(user_locale) );
