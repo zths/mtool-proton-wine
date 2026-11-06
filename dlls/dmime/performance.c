@@ -654,6 +654,24 @@ static void performance_flush_messages(struct performance *This, IDirectMusicSeg
     {
         if (!message_needs_flushing(message, state)) continue;
 
+        /* A NOTE requeued after NOTEON carries the pending note-off. Dropping
+         * it on a targeted stop would leave the already-started voice playing.
+         * The global stop sends MIDI_SYSTEM_RESET separately. */
+        if (state && message->msg.dwType == DMUS_PMSGT_NOTE)
+        {
+            DMUS_NOTE_PMSG *note = (DMUS_NOTE_PMSG *)&message->msg;
+
+            if (!(note->bFlags & DMUS_NOTEF_NOTEON))
+            {
+                DMUS_PMSG stop = message->msg;
+                stop.mtTime = -1;
+                if (FAILED(hr = performance_send_midi_pmsg(This, &stop,
+                        DMUS_PMSGF_MUSICTIME | DMUS_PMSGF_TOOL_IMMEDIATE,
+                        MIDI_NOTE_OFF, note->bMidiValue, 0)))
+                    WARN("Failed to stop active note, hr %#lx\n", hr);
+            }
+        }
+
         list_remove(&message->entry);
         list_init(&message->entry);
 

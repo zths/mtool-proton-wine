@@ -980,6 +980,18 @@ static HRESULT WINAPI synth_Unload(IDirectMusicSynth8 *iface, HANDLE handle,
     return E_FAIL;
 }
 
+/* Roland GS Reset (DT1, address 40 00 7f, data 00, checksum 41).
+ * Do not interpret other SysEx packets, including malformed resets, as silence.
+ */
+static BOOL is_gs_reset(const BYTE *data, DWORD size)
+{
+    static const BYTE body[] = {0x42, 0x12, 0x40, 0x00, 0x7f, 0x00, 0x41, 0xf7};
+
+    return size == 11 && data[0] == 0xf0 && data[1] == 0x41
+            && data[2] >= 0x10 && data[2] <= 0x1f
+            && !memcmp(data + 3, body, sizeof(body));
+}
+
 static HRESULT WINAPI synth_PlayBuffer(IDirectMusicSynth8 *iface,
         REFERENCE_TIME time, BYTE *buffer, DWORD size)
 {
@@ -995,20 +1007,24 @@ static HRESULT WINAPI synth_PlayBuffer(IDirectMusicSynth8 *iface,
         DMUS_EVENTHEADER *next = ROUND_ADDR(data + head->cbEvent + 7, 7);
         struct event *event, *next_event;
         LONGLONG position;
+        BOOL reset;
 
         if ((BYTE *)next > end) return E_INVALIDARG;
         if (FAILED(hr = IDirectMusicSynthSink_RefTimeToSample(This->sink,
                 time + head->rtDelta, &position)))
             return hr;
 
-        if (!(head->dwFlags & DMUS_EVENT_STRUCTURED))
+        reset = !(head->dwFlags & DMUS_EVENT_STRUCTURED) && is_gs_reset(data, head->cbEvent);
+        if (!(head->dwFlags & DMUS_EVENT_STRUCTURED) && !reset)
             FIXME("Unstructured events not implemeted\n");
-        else if (head->cbEvent > 3)
+        else if (!reset && head->cbEvent > 3)
             FIXME("Unexpected MIDI event size %lu\n", head->cbEvent);
         else
         {
             if (!(event = calloc(1, sizeof(*event)))) return E_OUTOFMEMORY;
-            memcpy(event->midi, data, head->cbEvent);
+            /* Queue the reset at its timestamp, just like short MIDI events. */
+            if (reset) event->midi[0] = MIDI_SYSTEM_RESET;
+            else memcpy(event->midi, data, head->cbEvent);
             event->time = time + head->rtDelta;
             event->position = position;
 
